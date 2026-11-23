@@ -15,9 +15,9 @@ jobs:
         uses: actions/checkout@v3  # 用于将github代码仓库的代码拷贝到工作目录中
  
       - name: 设置python环境
-        uses: actions/setup-python@v2 # 用于设置 Python 环境，它允许你指定要在工作环境中使用的 Python 版本
+        uses: actions/setup-python@v5 # 用于设置 Python 环境，它允许你指定要在工作环境中使用的 Python 版本
         with:
-          python-version: '3.9'  # 选择要用的Python版本
+          python-version: '3.11'  # 选择要用的Python版本
  
       - name: 安装依赖包
         run: | # 安装依赖包
