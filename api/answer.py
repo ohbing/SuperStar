@@ -187,4 +187,106 @@ class Tiku:
 
 class TikuYanxi(Tiku):
     # 言溪题库实现
-    def
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = '言溪题库'
+        self.api = 'https://tk.enncy.cn/query'
+        self._token = None
+        self._token_index = 0   # token队列计数器
+        self._times = 100   # 查询次数剩余，初始化为100，查询后校对修正
+
+    def _query(self, q_info: dict):
+        res = requests.get(
+            self.api,
+            params={
+                'question': q_info['title'],
+                'token': self._token
+            },
+            verify=False
+        )
+        if res.status_code == 200:
+            res_json = res.json()
+            if not res_json['code']:
+                # 如果是因为TOKEN次数到期，则更换token
+                if self._times == 0 or '次数不足' in res_json['data']['answer']:
+                    logger.info(f'TOKEN查询次数不足，将会更换并重新搜题')
+                    self._token_index += 1
+                    self.load_token()
+                    # 重新查询
+                    return self._query(q_info)
+                logger.error(f'{self.name}查询失败:\n剩余查询数{res_json["data"].get("times", f"{self._times}(仅参考)")}:\n消息:{res_json["message"]}')
+                return None
+            self._times = res_json["data"].get("times", self._times)
+            return res_json['data']['answer'].strip()
+        else:
+            logger.error(f'{self.name}查询失败:\n{res.text}')
+        return None
+    
+    def load_token(self): 
+        token_list = self._conf['tokens'].split(',')
+        if self._token_index == len(token_list):
+            # TOKEN 用完
+            logger.error('TOKEN用完，请自行更换再重启脚本')
+            raise Exception(f'{self.name} TOKEN 已用完，请更换')
+        self._token = token_list[self._token_index]
+
+    def _init_tiku(self):
+        self.load_token()
+
+
+class TikuZhipu(Tiku):
+    # 智谱 AI (glm-4-flash 免费模型) 题库实现
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = '智谱AI题库'
+        self.api = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+        self._api_key = None
+
+    def _init_tiku(self):
+        # 优先从 GitHub Actions 环境变量读取，本地调试时也可从 config.ini 读取
+        self._api_key = os.getenv("ZHIPU_API_KEY") or self._conf.get('api_key', '')
+        if not self._api_key:
+            logger.error('未配置 ZHIPU_API_KEY，已停用智谱AI题库')
+            self.DISABLE = True
+
+    def _query(self, q_info: dict):
+        title = q_info.get('title', '')
+        q_type = q_info.get('type', '')
+        options = q_info.get('options', '')
+        if isinstance(options, list):
+            options = '\n'.join(options)
+
+        prompt = f"""你是一个精准的网课答题助手。请直接给出答案，不要包含任何解析、序号或多余文字。
+题型：{q_type}
+题目：{title}
+选项：
+{options}
+
+要求：
+1. 单选题/多选题：直接输出正确选项的完整文字内容（不要带A/B/C前缀），多选题多个答案用 # 隔开。
+2. 判断题：只输出 正确 或 错误。
+3. 填空题：直接输出答案，多个空用 # 隔开。"""
+
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "glm-4-flash",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "max_tokens": 200
+        }
+
+        for attempt in range(3):
+            try:
+                res = requests.post(self.api, headers=headers, json=payload, timeout=30, verify=False)
+                if res.status_code == 200:
+                    res_json = res.json()
+                    return res_json['choices'][0]['message']['content'].strip()
+                else:
+                    logger.error(f'{self.name}查询失败({res.status_code}): {res.text}')
+            except Exception as e:
+                logger.error(f'{self.name}请求异常(第{attempt + 1}次): {e}')
+            time.sleep(2)
+            return None
