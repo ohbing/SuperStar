@@ -1,28 +1,29 @@
 name: 刷课
- 
-on: 
+
+on:
   push:
     branches: [ main ]
-  #是否开始每天8点定时刷课，若要开启请把下面两行注释去掉
+  # 是否开始每天8点定时刷课，若要开启请把下面两行注释去掉（注：GitHub Actions 使用 UTC 时间，北京时间8点对应 0 0 * * *）
   #schedule:
-  #  - cron: "0 8 * * *" 
-    
-jobs: 
+  #  - cron: "0 0 * * *"
+
+jobs:
   Start:
-    runs-on: ubuntu-latest # 在最新版本的 Ubuntu 操作系统环境下运行
-    steps: # 要执行的步骤
+    runs-on: ubuntu-latest
+    steps:
       - name: 拷贝代码
-        uses: actions/checkout@v3  # 用于将github代码仓库的代码拷贝到工作目录中
- 
+        uses: actions/checkout@v4
+
       - name: 设置python环境
-        uses: actions/setup-python@v5 # 用于设置 Python 环境，它允许你指定要在工作环境中使用的 Python 版本
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # 选择要用的Python版本
- 
+          python-version: '3.11'
+
       - name: 安装依赖包
-        run: | # 安装依赖包
-          pip install -r ./requirements.txt 
-          
-      
+        run: |
+          pip install -r ./requirements.txt
+
       - name: Run main.py
-        run: python main.py -u 13528057875 -p zxj051121 -l 266999245 #课程id，默认为心理课的
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+        run: python main.py -u ${{ secrets.USER_PHONE }} -p ${{ secrets.USER_PWD }} -l 266999245
