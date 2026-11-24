@@ -103,8 +103,8 @@ def decode_course_card(_text: str):
         _cards = _cards["attachments"]
         _job_list = []
         for _card in _cards:
-            # 已经通过的任务
-            if "isPassed" in _card and _card["isPassed"] is True:
+            # 已经通过的任务：仅保留视频任务用于重刷，测验/文档/阅读等已完成任务依然跳过
+            if "isPassed" in _card and _card["isPassed"] is True and _card.get("type") != "video":
                 continue
             # 不属于任务点的任务
             if "job" not in _card or _card["job"] is False:
@@ -227,5 +227,3 @@ def decode_questions_info(html_content) -> dict:
     # 处理答题信息
     form_data['answerwqbid'] = ",".join([q['id'] for q in form_data['questions']])+","
     return form_data
-
-
