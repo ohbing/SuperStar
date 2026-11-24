@@ -229,7 +229,8 @@ class Chaoxing:
                 if _isFinished:
                     _playingTime = _duration
                 _isPassed = self.video_progress_log(_session, _course, _job, _job_info, _dtoken, _duration, _playingTime, _type)
-                if not _isPassed or (_isPassed and _isPassed["isPassed"]):
+                # 忽略 isPassed，强制一秒一秒完整播完；仅在接口报错(如403)时退出
+                if not _isPassed:
                     break
                 _wait_time = get_random_seconds()
                 if _playingTime + _wait_time >= int(_duration):
@@ -240,6 +241,10 @@ class Chaoxing:
                 _playingTime += _wait_time
             print("\r", end="", flush=True)
             logger.info(f"任务完成: {_job['name']}")
+            # 每个视频播放结束后随机暂停 2~5 分钟，模拟真实学习行为
+            _pause_seconds = random.randint(120, 300)
+            logger.info(f"模拟真实学习行为，暂停 {_pause_seconds // 60} 分 {_pause_seconds % 60} 秒后继续...")
+            time.sleep(_pause_seconds)
 
     def study_document(self, _course, _job):
         _session = init_session()
