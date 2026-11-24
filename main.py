@@ -1,35 +1,29 @@
 # -*- coding: utf-8 -*-
 import argparse
 import configparser
+import datetime
+import sys
 from api.logger import logger
 from api.base import Chaoxing, Account
-from api.exceptions import LoginError, FormatError, JSONDecodeError,MaxRollBackError
+from api.exceptions import LoginError, FormatError, JSONDecodeError, MaxRollBackError
 from api.answer import Tiku
-from urllib3 import disable_warnings,exceptions
+from urllib3 import disable_warnings, exceptions
 import os
-
-# # 定义全局变量，用于存储配置文件路径
-# textPath = './resource/BookID.txt'
-
-# # 获取文本 -> 用于查看学习过的课程ID
-# def getText():
-#     try: 
-#         if not os.path.exists(textPath):
-#             with open(textPath, 'x') as file: pass 
-#             return []
-#         with open(textPath, 'r', encoding='utf-8') as file: content = file.read().split(',')
-#         content = {int(item.strip()) for item in content if item.strip()}
-#         return list(content)
-#     except Exception as e: logger.error(f"获取文本失败: {e}"); return []
-
-# # 追加文本 -> 用于记录学习过的课程ID
-# def appendText(text):
-#     if not os.path.exists(textPath): return
-#     with open(textPath, 'a', encoding='utf-8') as file: file.write(f'{text}, ') 
-    
 
 # 关闭警告
 disable_warnings(exceptions.InsecureRequestWarning)
+
+# 北京时间 (UTC+8)
+BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
+
+def check_study_time():
+    """检查当前北京时间是否在 08:00 - 21:00 之间，不在则安全退出"""
+    now = datetime.datetime.now(BEIJING_TZ)
+    if not (8 <= now.hour < 21):
+        logger.info(f"当前北京时间 {now.strftime('%H:%M:%S')} 不在允许学习时段 (08:00-21:00)，程序自动停止。")
+        sys.exit(0)
+
 
 def init_config():
     parser = argparse.ArgumentParser(description='Samueli924/chaoxing')  # 命令行传参
@@ -49,14 +43,15 @@ def init_config():
                 config['tiku']
                 )
     else:
-        return (args.username, args.password, args.list.split(",") if args.list else None, int(args.speed) if args.speed else 1,None)
+        return (args.username, args.password, args.list.split(",") if args.list else None, int(args.speed) if args.speed else 1, None)
+
 
 class RollBackManager:
     def __init__(self) -> None:
         self.rollback_times = 0
         self.rollback_id = ""
 
-    def add_times(self,id:str) -> None:
+    def add_times(self, id: str) -> None:
         if id == self.rollback_id and self.rollback_times == 3:
             raise MaxRollBackError("回滚次数已达3次，请手动检查学习通任务点完成情况")
         elif id != self.rollback_id:
@@ -69,10 +64,13 @@ class RollBackManager:
 
 if __name__ == '__main__':
     try:
+        # 启动前先检查是否在每日 08:00 - 21:00（北京时间）
+        check_study_time()
+
         # 避免异常的无限回滚
         RB = RollBackManager()
         # 初始化登录信息
-        username, password, course_list, speed,tiku_config= init_config()
+        username, password, course_list, speed, tiku_config = init_config()
         # 规范化播放速度的输入值
         speed = min(2.0, max(1.0, speed))
         if (not username) or (not password):
@@ -85,7 +83,7 @@ if __name__ == '__main__':
         tiku = tiku.get_tiku_from_config()  # 载入题库
         tiku.init_tiku()    # 初始化题库
         # 实例化超星API
-        chaoxing = Chaoxing(account=account,tiku=tiku)
+        chaoxing = Chaoxing(account=account, tiku=tiku)
         # 检查当前登录状态，并检查账号密码
         _login_state = chaoxing.login()
         if not _login_state["status"]:
@@ -112,6 +110,7 @@ if __name__ == '__main__':
         # 开始遍历要学习的课程列表
         logger.info(f"课程列表过滤完毕，当前课程任务数量: {len(course_task)}")
         for course in course_task:
+            check_study_time()
             logger.info(f"开始学习课程: {course['title']}")
             # 获取当前课程的所有章节
             point_list = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
@@ -119,6 +118,7 @@ if __name__ == '__main__':
             # 为了支持课程任务回滚，采用下标方式遍历任务点
             __point_index = 0
             while __point_index < len(point_list["points"]):
+                check_study_time()
                 point = point_list["points"][__point_index]
                 logger.info(f'当前章节: {point["title"]}')
                 # 获取当前章节的所有任务点
@@ -126,11 +126,9 @@ if __name__ == '__main__':
                 job_info = None
                 jobs, job_info = chaoxing.get_job_list(course["clazzId"], course["courseId"], course["cpi"], point["id"])
                 
-                # bookID = job_info["knowledgeid"] # 获取视频ID
-                
                 # 发现未开放章节，尝试回滚上一个任务重新完成一次
                 try:
-                    if job_info.get('notOpen',False):
+                    if job_info.get('notOpen', False):
                         __point_index -= 1  # 默认第一个任务总是开放的
                         # 针对题库启用情况
                         if not tiku or tiku.DISABLE or not tiku.SUBMIT:
@@ -144,22 +142,16 @@ if __name__ == '__main__':
                     # 跳过该课程，继续下一课程
                     break
 
-
                 # 可能存在章节无任何内容的情况
                 if not jobs:
                     __point_index += 1
                     continue
                 # 遍历所有任务点
                 for job in jobs:
+                    # 每个任务开始前检查时间，超过21:00自动停止
+                    check_study_time()
                     # 视频任务
                     if job["type"] == "video":
-                        # TODO: 目前这个记录功能还不够完善，中途退出的课程ID也会被记录
-                        # TextBookID = getText() # 获取学习过的课程ID
-                        # if TextBookID.count(bookID) > 0: 
-                        #     logger.info(f"课程: {course['title']} 章节: {point['title']} 任务: {job['title']} 已学习过或在学习中，跳过") # 如果已经学习过该课程，则跳过
-                        #     break # 如果已经学习过该课程，则跳过
-                        # appendText(bookID) # 记录正在学习的课程ID
-
                         logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
                         # 超星的接口没有返回当前任务是否为Audio音频任务
                         isAudio = False
@@ -180,13 +172,15 @@ if __name__ == '__main__':
                     # 测验任务
                     elif job["type"] == "workid":
                         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
-                        chaoxing.study_work(course, job,job_info)
+                        chaoxing.study_work(course, job, job_info)
                     # 阅读任务
                     elif job["type"] == "read":
                         logger.trace(f"识别到阅读任务, 任务章节: {course['title']}")
-                        chaoxing.strdy_read(course, job,job_info)
+                        chaoxing.strdy_read(course, job, job_info)
                 __point_index += 1
         logger.info("所有课程学习任务已完成")
+    except SystemExit:
+        pass
     except BaseException as e:
         import traceback
         logger.error(f"错误: {type(e).__name__}: {e}")
