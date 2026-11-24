@@ -103,8 +103,26 @@ def decode_course_card(_text: str):
         _cards = _cards["attachments"]
         _job_list = []
         for _card in _cards:
-            # 已经通过的任务：仅保留视频任务用于重刷，测验/文档/阅读等已完成任务依然跳过
-            if "isPassed" in _card and _card["isPassed"] is True and _card.get("type") != "video":
+            # 视频任务：无论 isPassed 是否为 True、无论 job 字段是否存在，都强制加入重刷列表
+            if _card.get("type") == "video":
+                _prop = _card.get("property", {})
+                _objectid = _card.get("objectId") or _prop.get("objectid")
+                if not _objectid:
+                    logger.warning("出现无 objectId 视频，已跳过...")
+                    continue
+                _job = {}
+                _job["type"] = "video"
+                _job["jobid"] = _card.get("jobid") or _prop.get("_jobid", "")
+                _job["name"] = _prop.get("name", "未命名视频")
+                _job["otherinfo"] = _card.get("otherInfo", "")
+                _job["mid"] = _card.get("mid") or _prop.get("mid", "")
+                _job["objectid"] = _objectid
+                _job["aid"] = _card.get("aid", "")
+                _job_list.append(_job)
+                continue
+
+            # 已经通过的非视频任务（测验/文档/阅读等），依然跳过
+            if "isPassed" in _card and _card["isPassed"] is True:
                 continue
             # 不属于任务点的任务
             if "job" not in _card or _card["job"] is False:
@@ -124,23 +142,6 @@ def decode_course_card(_text: str):
                     _job['enc'] = _card["enc"]
                     _job['aid'] = _card["aid"]
                     _job_list.append(_job)
-                continue
-            # 视频任务
-            if _card["type"] == "video":
-                _job = {}
-                _job["type"] = "video"
-                _job["jobid"] = _card["jobid"]
-                _job["name"] = _card["property"]["name"]
-                _job["otherinfo"] = _card["otherInfo"]
-                try:
-                    _job["mid"] = _card["mid"]
-                except KeyError:
-                    logger.warning("出现转码失败视频，已跳过...")
-                    continue
-                _job["objectid"] = _card["objectId"]
-                _job["aid"] = _card["aid"]
-                # _job["doublespeed"] = _card["property"]["doublespeed"]
-                _job_list.append(_job)
                 continue
             if _card["type"] == "document":
                 _job = {}
