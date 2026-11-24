@@ -26,4 +26,4 @@ jobs:
       - name: Run main.py
         env:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-        run: python main.py -u ${{ secrets.USER_PHONE }} -p ${{ secrets.USER_PWD }} -l 266999245
+        run: python main.py -u ${{ secrets.USER_PHONE }} -p ${{ secrets.USER_PWD }} -l 224830509
